@@ -5132,6 +5132,10 @@ bkn_init_ndev(u8 *mac, char *name)
     /* Device vectors */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
     dev->netdev_ops = &bkn_netdev_ops;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,49))
+    dev->min_mtu = 68;
+    dev->max_mtu = rx_buffer_size;
+#endif
 #else
     dev->open = bkn_open;
     dev->hard_start_xmit = bkn_tx;
