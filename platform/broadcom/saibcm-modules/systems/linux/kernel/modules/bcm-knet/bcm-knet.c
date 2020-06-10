@@ -4859,9 +4859,15 @@ bkn_tx(struct sk_buff *skb, struct net_device *dev)
 }
 
 static void
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 bkn_timer(unsigned long context)
 {
     bkn_switch_info_t *sinfo = (bkn_switch_info_t *)context;
+#else
+bkn_timer(struct timer_list *t)
+{
+    bkn_switch_info_t *sinfo = (bkn_switch_info_t *)from_timer(sinfo, t, timer);
+#endif
     unsigned long flags;
     int chan;
     int restart_timer;
@@ -4925,9 +4931,15 @@ bkn_rx_add_tokens(bkn_switch_info_t *sinfo, int chan)
 }
 
 static void
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 bkn_rxtick(unsigned long context)
 {
     bkn_switch_info_t *sinfo = (bkn_switch_info_t *)context;
+#else
+bkn_rxtick(struct timer_list *t)
+{
+    bkn_switch_info_t *sinfo = (bkn_switch_info_t *)from_timer(sinfo, t, rxtick);
+#endif
     unsigned long flags;
     unsigned long cur_jif, ticks;
     uint32_t pkt_diff;
@@ -5042,10 +5054,14 @@ bkn_create_sinfo(int dev_no)
 
     spin_lock_init(&sinfo->lock);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
     init_timer(&sinfo->timer);
-    sinfo->timer.expires = jiffies + 1;
     sinfo->timer.data = (unsigned long)sinfo;
     sinfo->timer.function = bkn_timer;
+#else
+    timer_setup(&sinfo->timer, bkn_timer, 0);
+#endif
+    sinfo->timer.expires = jiffies + 1;
 
     INIT_LIST_HEAD(&sinfo->tx.api_dcb_list);
 
@@ -5063,10 +5079,14 @@ bkn_create_sinfo(int dev_no)
         sinfo->rx[0].use_rx_skb = 0;
     }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
     init_timer(&sinfo->rxtick);
-    sinfo->rxtick.expires = jiffies + 1;
     sinfo->rxtick.data = (unsigned long)sinfo;
     sinfo->rxtick.function = bkn_rxtick;
+#else
+    timer_setup(&sinfo->rxtick, bkn_rxtick, 0);
+#endif
+    sinfo->rxtick.expires = jiffies + 1;
 
     for (chan = 0; chan < NUM_RX_CHAN; chan++) {
         sinfo->rx[chan].rate_max = rx_rate[chan];

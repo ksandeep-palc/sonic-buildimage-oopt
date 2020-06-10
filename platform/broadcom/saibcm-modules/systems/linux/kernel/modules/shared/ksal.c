@@ -180,9 +180,9 @@ sal_sem_give(sal_sem_t b)
 uint32
 sal_time_usecs(void)
 {
-    struct timeval ltv;
-    do_gettimeofday(&ltv);
-    return (ltv.tv_sec * SECOND_USEC + ltv.tv_usec);
+    struct timespec64 ltv;
+    ktime_get_real_ts64(&ltv);
+    return (ltv.tv_sec * SECOND_USEC + (ltv.tv_nsec/1000));
 }
     
 void
