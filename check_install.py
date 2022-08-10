@@ -1,9 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-import pexpect
 import argparse
+import pexpect
 import sys
 import time
+
 
 def main():
 
@@ -14,45 +15,50 @@ def main():
 
     args = parser.parse_args()
 
-    KEY_UP = '\x1b[A'
-    KEY_DOWN = '\x1b[B'
-    KEY_RIGHT = '\x1b[C'
-    KEY_LEFT = '\x1b[D'
-
     login_prompt = 'sonic login:'
     passwd_prompt = 'Password:'
-    cmd_prompt = "%s@sonic:~\$ $" % args.u
+    cmd_prompt = "{}@sonic:~\$ $".format(args.u)
     grub_selection = "The highlighted entry will be executed"
 
-    p = pexpect.spawn("telnet 127.0.0.1 %s" % args.p, timeout=600, logfile=sys.stdout)
-
-    # select ONIE embed
-    p.expect(grub_selection)
-    p.sendline(KEY_DOWN)
-
-    # install sonic image
+    i = 0
     while True:
-        i = p.expect([login_prompt, passwd_prompt, grub_selection, cmd_prompt])
+        try:
+            p = pexpect.spawn("telnet 127.0.0.1 {}".format(args.p), timeout=600, logfile=sys.stdout, encoding='utf-8')
+            break
+        except Exception as e:
+            print(str(e))
+            i += 1
+            if i == 10:
+                raise
+            time.sleep(1)
+
+    # select default SONiC Image
+    p.expect(grub_selection)
+    p.sendline()
+
+    # bootup sonic image
+    while True:
+        i = p.expect([login_prompt, passwd_prompt, cmd_prompt])
         if i == 0:
             # send user name
             p.sendline(args.u)
         elif i == 1:
             # send password
             p.sendline(args.P)
-        elif i == 2:
-            # select onie install
-            p.sendline()
         else:
             break
 
     # check version
     time.sleep(5)
+    p.sendline('uptime')
+    p.expect([cmd_prompt])
     p.sendline('show version')
     p.expect([cmd_prompt])
     p.sendline('show ip bgp sum')
     p.expect([cmd_prompt])
     p.sendline('sync')
     p.expect([cmd_prompt])
+
 
 if __name__ == '__main__':
     main()

@@ -17,7 +17,7 @@ class SfpUtil(SfpUtilBase):
     PORT_END = 63
     PORTS_IN_BLOCK = 64
 
-    EEPROM_OFFSET = 20
+    EEPROM_OFFSET = 1
 
     _port_to_eeprom_mapping = {}
 
@@ -31,14 +31,14 @@ class SfpUtil(SfpUtilBase):
 
     @property
     def qsfp_ports(self):
-        return range(0, self.PORTS_IN_BLOCK + 1)
+        return list(range(0, self.PORTS_IN_BLOCK + 1))
 
     @property
     def port_to_eeprom_mapping(self):
         return self._port_to_eeprom_mapping
 
     def __init__(self):
-        eeprom_path = "/sys/class/i2c-adapter/i2c-{0}/{0}-0050/eeprom"
+        eeprom_path = "/sys/kernel/sfp/eeprom_sfp_{0}"
 
         for x in range(0, self.port_end + 1):
             self._port_to_eeprom_mapping[x] = eeprom_path.format(x + self.EEPROM_OFFSET)
@@ -53,7 +53,7 @@ class SfpUtil(SfpUtilBase):
         try:
             reg_file = open("/sys/devices/platform/delta-ag9064-cpld.0/qsfp_present")
         except IOError as e:
-            print "Error: unable to open file: %s" % str(e)
+            print("Error: unable to open file: %s" % str(e))
             return False
 
         content = reg_file.readline().rstrip()
@@ -78,7 +78,7 @@ class SfpUtil(SfpUtilBase):
         try:
             reg_file = open("/sys/devices/platform/delta-ag9064-cpld.0/qsfp_lpmode")
         except IOError as e:
-            print "Error: unable to open file: %s" % str(e)
+            print("Error: unable to open file: %s" % str(e))
 
         content = reg_file.readline().rstrip()
 
@@ -102,7 +102,7 @@ class SfpUtil(SfpUtilBase):
         try:
             reg_file = open("/sys/devices/platform/delta-ag9064-cpld.0/qsfp_lpmode", "r+")
         except IOError as e:
-            print "Error: unable to open file: %s" % str(e)
+            print("Error: unable to open file: %s" % str(e))
             return False
 
         content = reg_file.readline().rstrip()
@@ -138,7 +138,7 @@ class SfpUtil(SfpUtilBase):
         try:
             reg_file = open(QSFP_RESET_REGISTER_DEVICE_FILE, "r+")
         except IOError as e:
-            print "Error: unable to open file: %s" % str(e)
+            print("Error: unable to open file: %s" % str(e))
             return False
 
         content = reg_file.readline().rstrip()
@@ -164,7 +164,7 @@ class SfpUtil(SfpUtilBase):
         try:
             reg_file = open(QSFP_RESET_REGISTER_DEVICE_FILE, "w")
         except IOError as e:
-            print "Error: unable to open file: %s" % str(e)
+            print("Error: unable to open file: %s" % str(e))
             return False
 
         reg_value = reg_value | mask

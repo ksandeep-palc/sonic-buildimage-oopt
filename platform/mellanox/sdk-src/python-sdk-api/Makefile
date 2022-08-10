@@ -2,7 +2,7 @@
 SHELL = /bin/bash
 
 MAIN_TARGET = python-sdk-api_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb
-DERIVED_TARGETS =
+DERIVED_TARGETS = python-sdk-api-dbgsym_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb
 PACKAGE_NAME = python_sdk_api
 
 $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
@@ -18,7 +18,7 @@ $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
 		./autogen.sh
 	fi
 
-	debuild -b -us -uc -j$(SONIC_CONFIG_MAKE_JOBS)
+	debuild -e PYTHON_INTERPRETERS="\"python2 python3\"" -b -us -uc -j$(SONIC_CONFIG_MAKE_JOBS)
 
 	popd
 

@@ -1,19 +1,22 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+import glob
 import re
 import sys
-import glob
 
 permitted_properties = []
 
+
 def usage():
-    print "Usage: " + sys.argv[0] + " <config_file>"
+    print("Usage: " + sys.argv[0] + " <config_file>")
     sys.exit(1)
 
-def check_property(p):
 
+def check_property(p):
     if p in permitted_properties:
         return True
     return False
+
 
 def check_file(file_name):
     try:
@@ -30,10 +33,14 @@ def check_file(file_name):
                     continue
                 p = line.split("=", 1)[0]
 
+                # Remove trailing chip name "bcm8869x"
+                p = re.sub(r"\.bcm8869x(_adapter|_[a-z]\d)?$", "", p)
                 # Remove trailing unit ".<number>$"
                 p = re.sub(r"\.[0-9]+$", '', p)
                 # Remove trailing port name
-                p = re.sub(r"_[cxg]e(\d+)?$", '', p)
+                p = re.sub(r"_[cxg][de](\d+)?$", '', p)
+                # Remove trailing port id "{id/number}"
+                p = re.sub(r"\{.*\}", '', p)
                 # Remove trailing port name example
                 p = re.sub(r"_<port>$", '', p)
                 # Remove trailing port number
@@ -45,17 +52,23 @@ def check_file(file_name):
                 p = re.sub(r"_lane\d+$", '', p)
                 # Remove trailing "{<number>.<number>}$"
                 p = re.sub(r"{[0-9]+\.[0-9]+}$", '', p)
+                # Remove trailing phy with number
+                p = re.sub(r"_phy\d+$", '', p)
+                # Remove trailing phase of data granularity
+                p = re.sub(r"_data_granularity_\w\w$", '_data_granularity', p)
+                # Remove trailing type of port_init_speed
+                p = re.sub(r"^port_init_speed_\w+$", 'port_init_speed', p)
 
                 if not check_property(p):
                     file_ok = False
-                    print("[line %d] Error: %s is not permitted" % (lineno, p))
+                    print("[line {}] Error: {} is not permitted".format(lineno, p))
             if file_ok:
-                print "Result: " + file_name + " PASSED the config check!"
+                print("Result: " + file_name + " PASSED the config check!")
             else:
-                print "Result: " + file_name + " FAILED the config check!"
+                print("Result: " + file_name + " FAILED the config check!")
             return file_ok
     except IOError:
-        print "Error: Cannot open file " + file_name
+        print("Error: Cannot open file " + file_name)
         return False
 
 
@@ -82,6 +95,7 @@ def main(argv):
 
     if not all_good:
         sys.exit(-1)
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

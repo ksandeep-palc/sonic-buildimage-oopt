@@ -1,2 +1,3 @@
-obj-m := centec_e582_48x6q_platform.o dal.o centec_at24c64.o
-dal-y := dal_kernel.o dal_mpool.o
+KBUILD_EXTRA_SYMBOLS = /sonic/platform/centec/sonic-platform-modules-e582/pca954x/Module.symvers
+
+obj-m := centec_e582_48x6q_platform.o

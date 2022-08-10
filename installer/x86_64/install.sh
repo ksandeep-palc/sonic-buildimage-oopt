@@ -20,6 +20,26 @@ _trap_push() {
 }
 _trap_push true
 
+read_conf_file() {
+    local conf_file=$1
+    while IFS='=' read -r var value || [ -n "$var" ]
+    do
+        # remove newline character
+        var=$(echo $var | tr -d '\r\n')
+        value=$(echo $value | tr -d '\r\n')
+        # remove comment string
+        var=${var%#*}
+        value=${value%#*}
+        # skip blank line
+        [ -z "$var" ] && continue
+        # remove double quote in the beginning
+        tmp_val=${value#\"}
+        # remove double quote in the end
+        value=${tmp_val%\"}
+        eval "$var=\"$value\""
+    done < "$conf_file"
+}
+
 # Main
 set -e
 cd $(dirname $0)
@@ -37,7 +57,7 @@ else
 fi
 
 if [ -r ./machine.conf ]; then
-. ./machine.conf
+    read_conf_file "./machine.conf"
 fi
 
 if [ -r ./onie-image.conf ]; then
@@ -54,9 +74,9 @@ fi
 
 # get running machine from conf file
 if [ -r /etc/machine.conf ]; then
-    . /etc/machine.conf
+    read_conf_file "/etc/machine.conf"
 elif [ -r /host/machine.conf ]; then
-    . /host/machine.conf
+    read_conf_file "/host/machine.conf"
 elif [ "$install_env" != "build" ]; then
     echo "cannot find machine.conf"
     exit 1
@@ -71,6 +91,29 @@ ONIE_PLATFORM_EXTRA_CMDLINE_LINUX=""
 VAR_LOG_SIZE=4096
 
 [ -r platforms/$onie_platform ] && . platforms/$onie_platform
+
+# Verify image platform is inside devices list
+if [ "$install_env" = "onie" ]; then
+    if ! grep -Fxq "$onie_platform" platforms_asic; then
+        echo "The image you're trying to install is of a different ASIC type as the running platform's ASIC"
+        while true; do
+            read -r -p "Do you still wish to install this image? [y/n]: " input
+            case $input in
+                [Yy])
+                    echo "Force installing..."
+                    break
+                    ;;
+                [Nn])
+                    echo "Exited installation!"
+                    exit 1
+                    ;;
+                *)
+                    echo "Error: Invalid input"
+                    ;;
+            esac
+        done
+    fi
+fi
 
 # Pick up console port and speed from install enviroment if not defined yet.
 # Console port and speed setting in cmdline is like "console=ttyS0,9600n",
@@ -106,6 +149,11 @@ fi
 if [ "$install_env" != "build" ]; then
     onie_dev=$(blkid | grep ONIE-BOOT | head -n 1 | awk '{print $1}' |  sed -e 's/:.*$//')
     blk_dev=$(echo $onie_dev | sed -e 's/[1-9][0-9]*$//' | sed -e 's/\([0-9]\)\(p\)/\1/')
+
+    # check if we have an nvme device
+    blk_suffix=
+    echo $blk_dev | grep -q nvme0 && blk_suffix="p"
+
     # Note: ONIE has no mount setting for / with device node, so below will be empty string
     cur_part=$(cat /proc/mounts | awk "{ if(\$2==\"/\") print \$1 }" | grep $blk_dev || true)
 
@@ -225,7 +273,7 @@ create_demo_gpt_partition()
     echo "Partition #$demo_part is available"
 
     # Create new partition
-    echo "Creating new $demo_volume_label partition ${blk_dev}$demo_part ..."
+    echo "Creating new $demo_volume_label partition ${blk_dev}${blk_suffix}$demo_part ..."
 
     if [ "$demo_type" = "DIAG" ] ; then
         # set the GPT 'system partition' attribute bit for the DIAG
@@ -424,6 +472,7 @@ image_dir="image-$image_version"
 if [ "$install_env" = "onie" ]; then
     eval $create_demo_partition $blk_dev
     demo_dev=$(echo $blk_dev | sed -e 's/\(mmcblk[0-9]\)/\1p/')$demo_part
+    echo $blk_dev | grep -q nvme0 && demo_dev=$(echo $blk_dev | sed -e 's/\(nvme[0-9]n[0-9]\)/\1p/')$demo_part
 
     # Make filesystem
     mkfs.ext4 -L $demo_volume_label $demo_dev
@@ -441,7 +490,13 @@ if [ "$install_env" = "onie" ]; then
 
 elif [ "$install_env" = "sonic" ]; then
     demo_mnt="/host"
-    eval running_sonic_revision=$(cat /etc/sonic/sonic_version.yml | grep build_version | cut -f2 -d" ")
+    # Get current SONiC image (grub/aboot/uboot)
+    eval running_sonic_revision="$(cat /proc/cmdline | sed -n 's/^.*loop=\/*image-\(\S\+\)\/.*$/\1/p')"
+    # Verify SONiC image exists
+    if [ ! -d "$demo_mnt/image-$running_sonic_revision" ]; then
+        echo "ERROR: SONiC installation is corrupted: path $demo_mnt/image-$running_sonic_revision doesn't exist"
+        exit 1
+    fi
     # Prevent installing existing SONiC if it is running
     if [ "$image_dir" = "image-$running_sonic_revision" ]; then
         echo "Not installing SONiC version $running_sonic_revision, as current running SONiC has the same version"
@@ -479,15 +534,23 @@ else
 fi
 
 # Decompress the file for the file system directly to the partition
-unzip -o $ONIE_INSTALLER_PAYLOAD -x "$FILESYSTEM_DOCKERFS" -d $demo_mnt/$image_dir
-
-if [ "$install_env" = "onie" ]; then
-    TAR_EXTRA_OPTION="--numeric-owner"
+if [ x"$docker_inram" = x"on" ]; then
+    # when disk is small, keep dockerfs.tar.gz in disk, expand it into ramfs during initrd
+    unzip -o $ONIE_INSTALLER_PAYLOAD -x "platform.tar.gz" -d $demo_mnt/$image_dir
 else
-    TAR_EXTRA_OPTION="--numeric-owner --warning=no-timestamp"
+    unzip -o $ONIE_INSTALLER_PAYLOAD -x "$FILESYSTEM_DOCKERFS" "platform.tar.gz"  -d $demo_mnt/$image_dir
+
+    if [ "$install_env" = "onie" ]; then
+        TAR_EXTRA_OPTION="--numeric-owner"
+    else
+        TAR_EXTRA_OPTION="--numeric-owner --warning=no-timestamp"
+    fi
+    mkdir -p $demo_mnt/$image_dir/$DOCKERFS_DIR
+    unzip -op $ONIE_INSTALLER_PAYLOAD "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/$DOCKERFS_DIR
 fi
-mkdir -p $demo_mnt/$image_dir/$DOCKERFS_DIR
-unzip -op $ONIE_INSTALLER_PAYLOAD "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/$DOCKERFS_DIR
+
+mkdir -p $demo_mnt/$image_dir/platform
+unzip -op $ONIE_INSTALLER_PAYLOAD "platform.tar.gz" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/platform
 
 if [ "$install_env" = "onie" ]; then
     # Store machine description in target file system
@@ -530,8 +593,18 @@ trap_push "rm $grub_cfg || true"
 
 [ -r ./platform.conf ] && . ./platform.conf
 
+# Check if the CPU vendor is 'Intel' and disable c-states if True
+CPUVENDOR="$(cat /proc/cpuinfo | grep -m 1 vendor_id | awk '{print $3}')"
+echo "Switch CPU vendor is: $CPUVENDOR"
+if echo "$CPUVENDOR" | grep -i 'Intel' >/dev/null 2>&1; then
+    echo "Switch CPU cstates are: disabled"
+    CSTATES="intel_idle.max_cstate=0"
+else
+    CSTATES=""
+fi
+
 DEFAULT_GRUB_SERIAL_COMMAND="serial --port=${CONSOLE_PORT} --speed=${CONSOLE_SPEED} --word=8 --parity=no --stop=1"
-DEFAULT_GRUB_CMDLINE_LINUX="console=tty0 console=ttyS${CONSOLE_DEV},${CONSOLE_SPEED}n8 quiet"
+DEFAULT_GRUB_CMDLINE_LINUX="console=tty0 console=ttyS${CONSOLE_DEV},${CONSOLE_SPEED}n8 quiet $CSTATES"
 GRUB_SERIAL_COMMAND=${GRUB_SERIAL_COMMAND:-"$DEFAULT_GRUB_SERIAL_COMMAND"}
 GRUB_CMDLINE_LINUX=${GRUB_CMDLINE_LINUX:-"$DEFAULT_GRUB_CMDLINE_LINUX"}
 export GRUB_SERIAL_COMMAND
@@ -540,8 +613,8 @@ export GRUB_CMDLINE_LINUX
 # Add common configuration, like the timeout and serial console.
 cat <<EOF > $grub_cfg
 $GRUB_SERIAL_COMMAND
-terminal_input serial
-terminal_output serial
+terminal_input console serial
+terminal_output console serial
 
 set timeout=5
 
@@ -550,15 +623,21 @@ EOF
 # Add the logic to support grub-reboot and grub-set-default
 cat <<EOF >> $grub_cfg
 if [ -s \$prefix/grubenv ]; then
-  load_env
+    load_env
 fi
-if [ "\${saved_entry}" ] ; then
-   set default="\${saved_entry}"
+if [ "\${saved_entry}" ]; then
+    set default="\${saved_entry}"
 fi
-if [ "\${next_entry}" ] ; then
-   set default="\${next_entry}"
-   set next_entry=
-   save_env next_entry
+if [ "\${next_entry}" ]; then
+    set default="\${next_entry}"
+    unset next_entry
+    save_env next_entry
+fi
+if [ "\${onie_entry}" ]; then
+    set next_entry="\${default}"
+    set default="\${onie_entry}"
+    unset onie_entry
+    save_env onie_entry next_entry
 fi
 
 EOF
@@ -572,20 +651,28 @@ EOF
     $onie_root_dir/tools/bin/onie-boot-mode -q -o install
 fi
 
-# Add a menu entry for the DEMO OS
+# Add a menu entry for the SONiC OS
 # Note: assume that apparmor is supported in the kernel
 demo_grub_entry="$demo_volume_revision_label"
 if [ "$install_env" = "sonic" ]; then
-    old_sonic_menuentry=$(cat /host/grub/grub.cfg | sed "/$running_sonic_revision/,/}/!d")
-    demo_dev=$(echo $old_sonic_menuentry | sed -e "s/.*root\=\(.*\)rw.*/\1/")
+    old_sonic_menuentry=$(cat /host/grub/grub.cfg | sed "/^menuentry '${demo_volume_label}-${running_sonic_revision}'/,/}/!d")
+    grub_cfg_root=$(echo $old_sonic_menuentry | sed -e "s/.*root\=\(.*\)rw.*/\1/")
     onie_menuentry=$(cat /host/grub/grub.cfg | sed "/menuentry ONIE/,/}/!d")
+elif [ "$install_env" = "build" ]; then
+    grub_cfg_root=%%SONIC_ROOT%%
+else # install_env = "onie"
+    uuid=$(blkid "$demo_dev" | sed -ne 's/.* UUID=\"\([^"]*\)\".*/\1/p')
+    if [ -z "$uuid" ]; then
+        grub_cfg_root=$demo_dev
+    else
+        grub_cfg_root=UUID=$uuid
+    fi
 fi
 
-if [ "$install_env" = "build" ]; then
-    grub_cfg_root=%%SONIC_ROOT%%
-else
-    grub_cfg_root=$demo_dev
-fi
+# Add extra linux command line
+extra_cmdline_linux=%%EXTRA_CMDLINE_LINUX%%
+echo "EXTRA_CMDLINE_LINUX=$extra_cmdline_linux"
+GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX $extra_cmdline_linux"
 
 cat <<EOF >> $grub_cfg
 menuentry '$demo_grub_entry' {
@@ -595,12 +682,13 @@ menuentry '$demo_grub_entry' {
         if [ x$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi
         insmod part_msdos
         insmod ext2
-        linux   /$image_dir/boot/vmlinuz-4.9.0-9-2-amd64 root=$grub_cfg_root rw $GRUB_CMDLINE_LINUX  \
+        linux   /$image_dir/boot/vmlinuz-5.10.0-12-2-amd64 root=$grub_cfg_root rw $GRUB_CMDLINE_LINUX  \
                 net.ifnames=0 biosdevname=0 \
                 loop=$image_dir/$FILESYSTEM_SQUASHFS loopfstype=squashfs                       \
+                systemd.unified_cgroup_hierarchy=0 \
                 apparmor=1 security=apparmor varlog_size=$VAR_LOG_SIZE usbcore.autosuspend=-1 $ONIE_PLATFORM_EXTRA_CMDLINE_LINUX
         echo    'Loading $demo_volume_label $demo_type initial ramdisk ...'
-        initrd  /$image_dir/boot/initrd.img-4.9.0-9-2-amd64
+        initrd  /$image_dir/boot/initrd.img-5.10.0-12-2-amd64
 }
 EOF
 

@@ -3,7 +3,8 @@ SHELL = /bin/bash
 
 MAIN_TARGET = sxd-libs_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb
 DERIVED_TARGETS = sxd-libs-dev_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb \
-				  sxd-libs-dev-static_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb
+				  sxd-libs-dev-static_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb \
+				  sxd-libs-dbgsym_1.mlnx.$(MLNX_SDK_DEB_VERSION)_amd64.deb
 PACKAGE_NAME = sxd_libs
 
 $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
@@ -19,7 +20,7 @@ $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
 		./autogen.sh
 	fi
 
-	debuild -b -us -uc -j$(SONIC_CONFIG_MAKE_JOBS)
+	debuild -e 'configure_options=--enable-sniffer=yes' -b -us -uc -j$(SONIC_CONFIG_MAKE_JOBS)
 
 	popd
 

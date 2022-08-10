@@ -24,17 +24,12 @@
 
 try:
     import os
-    import sys, getopt
-    import subprocess
-    import click
-    import imp
+    import getopt
+    import sys
     import logging
     import logging.config
     import logging.handlers
-    import types
     import time  # this is only being used as part of the example
-    import traceback    
-    from tabulate import tabulate
     from as7726_32x.fanutil import FanUtil
     from as7726_32x.thermalutil import ThermalUtil
 except ImportError as e:
@@ -124,15 +119,12 @@ class device_monitor(object):
         sys_handler = handler = logging.handlers.SysLogHandler(address = '/dev/log')
         sys_handler.setLevel(logging.WARNING)       
         logging.getLogger('').addHandler(sys_handler)
-
-        #logging.debug('SET. logfile:%s / loglevel:%d', log_file, log_level)
           
     def get_state_from_fan_policy(self, temp, policy):
         state=0
         
         logging.debug('temp=%d', temp)
         for i in range(0, len(policy)):
-            #logging.debug('policy[%d][0]=%d, policy[%d][1]=%d, policy[%d][2]=%d', i,policy[i][0],i, policy[i][1], i, policy[i][2])
             if temp > policy[i][2]:
                 if temp <= policy[i][3]:
                     state =i
@@ -141,7 +133,6 @@ class device_monitor(object):
                     break
         
         return state
-    
 
     def manage_fans(self):
        
@@ -156,8 +147,7 @@ class device_monitor(object):
         LEVEL_FAN_MID=1       
         LEVEL_FAN_MAX=2
         LEVEL_TEMP_HIGH=3
-        LEVEL_TEMP_CRITICAL=4  
-        
+        LEVEL_TEMP_CRITICAL=4
         
         fan_policy_f2b = {
            LEVEL_FAN_DEF:       [38,  0x4, 0,     38000],
@@ -212,16 +202,14 @@ class device_monitor(object):
             temp_get= (temp3 + temp4)/2  # Use (sensor_LM75_4a + sensor_LM75_4b) /2 
         ori_state=fan_policy_state
         
-        #temp_test_data=temp_test_data+1000
-        #temp_get = temp_get + temp_test_data
-        #print "Unit test:temp_get=%d"%temp_get
+        if test_temp!=0:
+            temp_test_data=temp_test_data+1000
+            temp_get = temp_get + temp_test_data
+            logging.debug('Unit test:temp_get=%d', temp_get)
         
         fan_policy_state=self.get_state_from_fan_policy(temp_get, fan_policy)
-        #print "temp3=%d"%temp3
-        #print "temp4=%d"%temp4
-        #print "temp_get=%d"%temp_get
-                        
-        logging.debug('lm75_48=%d, lm75_49=%d, lm75_4a=%d, lm_4b=%d, lm_4b=%d', temp1,temp2,temp3,temp4,temp5)
+                                
+        logging.debug('lm75_48=%d, lm75_49=%d, lm75_4a=%d, lm_4b=%d, lm_4c=%d', temp1,temp2,temp3,temp4,temp5)
         logging.debug('ori_state=%d, fan_policy_state=%d', ori_state, fan_policy_state)
         new_pwm = fan_policy[fan_policy_state][0]
         if fan_fail==0:
@@ -244,12 +232,8 @@ class device_monitor(object):
             else:
                 fan_fail=0
         
-        #if fan_policy_state == ori_state:            
-        #    return True 
-        #else:
         new_state = fan_policy_state
-        
-        #logging.warning('Temperature high alarm testing')       
+          
         if ori_state==LEVEL_FAN_DEF:            
            if new_state==LEVEL_TEMP_HIGH:
                if alarm_state==0:
@@ -307,11 +291,11 @@ def main(argv):
         try:
             opts, args = getopt.getopt(argv,'hdlt:',['lfile='])
         except getopt.GetoptError:
-            print 'Usage: %s [-d] [-l <log_file>]' % sys.argv[0]
+            print('Usage: %s [-d] [-l <log_file>]' % sys.argv[0])
             return 0
         for opt, arg in opts:
             if opt == '-h':
-                print 'Usage: %s [-d] [-l <log_file>]' % sys.argv[0]
+                print('Usage: %s [-d] [-l <log_file>]' % sys.argv[0])
                 return 0
             elif opt in ('-d', '--debug'):
                 log_level = logging.DEBUG
@@ -320,7 +304,7 @@ def main(argv):
         
         if sys.argv[1]== '-t':
             if len(sys.argv)!=7:
-                print "temp test, need input six temp"
+                print("temp test, need input six temp")
                 return 0
             
             i=0
@@ -329,11 +313,11 @@ def main(argv):
                i=i+1
             test_temp = 1   
             log_level = logging.DEBUG
-            print test_temp_list                       
+            print(test_temp_list)                       
     
     fan = FanUtil()
     fan.set_fan_duty_cycle(38)
-    print "set default fan speed to 37.5%"
+    print("set default fan speed to 37.5%")
     monitor = device_monitor(log_file, log_level)
     # Loop forever, doing something useful hopefully:
     while True:

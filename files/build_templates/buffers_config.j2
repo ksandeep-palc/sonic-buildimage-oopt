@@ -7,11 +7,11 @@ def
 {%- endmacro -%}
 
 {# Determine device topology and filename postfix #}
-{%- if DEVICE_METADATA is defined %}
+{%- if DEVICE_METADATA is defined and DEVICE_METADATA['localhost']['type'] is defined %}
 {%-     set switch_role = DEVICE_METADATA['localhost']['type'] %}
-{%-     if switch_role.lower() == 'torrouter' %}
+{%-     if 'torrouter' in switch_role.lower() and 'mgmt' not in switch_role.lower()%}
 {%-         set filename_postfix = 't0' %}
-{%-     elif switch_role.lower() == 'leafrouter' %}
+{%-     elif 'leafrouter' in switch_role.lower() and 'mgmt' not in switch_role.lower()%}
 {%-         set filename_postfix = 't1' %}
 {%-     else %}
 {%-         set filename_postfix = set_default_topology() %}
@@ -22,7 +22,7 @@ def
 {%- endif -%}
 
 {# Import default values from device HWSKU folder #}
-{%- import 'buffers_defaults_%s.j2' % filename_postfix as defs %}
+{%- import 'buffers_defaults_%s.j2' % filename_postfix as defs with context %}
 
 {%- set default_cable = defs.default_cable -%}
 
@@ -47,10 +47,19 @@ def
             {%- if DEVICE_NEIGHBOR_METADATA is defined and DEVICE_NEIGHBOR_METADATA[DEVICE_NEIGHBOR[local_port].name] %}
                 {%- set neighbor = DEVICE_NEIGHBOR_METADATA[DEVICE_NEIGHBOR[local_port].name] %}
                 {%- set neighbor_role = neighbor.type %}
-                {%- set roles1 = switch_role + '_' + neighbor_role %}
-                {%- set roles2 = neighbor_role + '_' + switch_role %}
-                {%- set roles1 = roles1 | lower %}
-                {%- set roles2 = roles2 | lower %}
+                {%- if 'asic' == neighbor_role | lower %}
+                         {%- set roles1 = 'internal' %}
+                         {%- if 'internal' not in ports2cable %}
+                             {%- set _ = ports2cable.update({'internal': '5m'}) %}
+                         {%- endif -%}
+                {%- else %}
+                         {%- set roles1 = switch_role + '_' + neighbor_role %}
+                         {%- set roles2 = neighbor_role + '_' + switch_role %}
+                         {%- set roles1 = roles1 | lower %}
+                         {%- set roles2 = roles2 | lower %}
+                         {%- set roles1 = roles1.replace('backend', '') %}
+                         {%- set roles2 = roles2.replace('backend', '') %}
+                {%- endif %}
                 {%- if roles1 in ports2cable %}
                     {%- if cable_len.append(ports2cable[roles1]) %}{% endif %}
                 {%- elif roles2 in ports2cable %}
@@ -62,11 +71,12 @@ def
     {%- if cable_len -%}
         {{ cable_len.0 }}
     {%- else %}
-        {%- if switch_role.lower() == 'torrouter' %}
+        {%- if 'torrouter' in switch_role.lower() and 'mgmt' not in switch_role.lower()%}
             {%- for local_port in VLAN_MEMBER %}
                 {%- if local_port[1] == port_name %}
                     {%- set roles3 = switch_role + '_' + 'server' %}
                     {%- set roles3 = roles3 | lower %}
+                    {%- set roles3 = roles3.replace('backend', '') %}
                     {%- if roles3 in ports2cable %}
                         {%- if cable_len.append(ports2cable[roles3]) %}{% endif %}
                     {%- endif %}
@@ -86,19 +96,29 @@ def
 {%- set PORT_ALL  = [] %}
 
 {%- if PORT is not defined %}
-    {%- if defs.generate_port_lists(PORT_ALL) %} {% endif %}
+    {%- if defs.generate_port_lists is defined %}
+        {%- if defs.generate_port_lists(PORT_ALL) %} {% endif %}
+    {%- endif %}
 {%- else %}
     {%- for port in PORT %}
-        {%- if PORT_ALL.append(port) %}{%- endif %}
+        {%- if not port.startswith('Ethernet-Rec') and not port.startswith('Ethernet-IB') %}
+            {%- if PORT_ALL.append(port) %}{%- endif %}
+        {%- endif %}
     {%- endfor %}
 {%- endif %}
 
 {%- set PORT_ACTIVE  = [] %}
+{%- set PORT_INACTIVE  = [] %}
 {%- if DEVICE_NEIGHBOR is not defined %}
     {%- set PORT_ACTIVE = PORT_ALL %}
 {%- else %}
     {%- for port in DEVICE_NEIGHBOR.keys() %}
         {%- if PORT_ACTIVE.append(port) %}{%- endif %}
+    {%- endfor %}
+    {%- for port in PORT_ALL %}
+        {%- if port not in DEVICE_NEIGHBOR.keys() %}
+            {%- if PORT_INACTIVE.append(port) %}{%- endif %}
+        {%- endif %}
     {%- endfor %}
 {%- endif %}
 
@@ -108,6 +128,21 @@ def
 {%- endfor %}
 {%- set port_names_active  = port_names_list_active  | join(',') %}
 
+{%- set port_names_list_extra_queues = [] %}
+{%- for port in PORT_ACTIVE %}
+    {%- if ((SYSTEM_DEFAULTS is defined) and ('tunnel_qos_remap' in SYSTEM_DEFAULTS) and (SYSTEM_DEFAULTS['tunnel_qos_remap']['status'] == 'enabled')) and
+            (('type' in DEVICE_METADATA['localhost'] and DEVICE_METADATA['localhost']['type'] == 'LeafRouter' and DEVICE_NEIGHBOR_METADATA is defined and DEVICE_NEIGHBOR[port].name in DEVICE_NEIGHBOR_METADATA and DEVICE_NEIGHBOR_METADATA[DEVICE_NEIGHBOR[port].name].type == 'ToRRouter') or
+            ('subtype' in DEVICE_METADATA['localhost'] and DEVICE_METADATA['localhost']['subtype'] == 'DualToR' and DEVICE_NEIGHBOR_METADATA is defined and DEVICE_NEIGHBOR[port].name in DEVICE_NEIGHBOR_METADATA and DEVICE_NEIGHBOR_METADATA[DEVICE_NEIGHBOR[port].name].type == 'LeafRouter')) %}
+        {%- if port_names_list_extra_queues.append(port) %}{%- endif %}
+    {%- endif %}
+{%- endfor %}
+{%- set port_names_extra_queues = port_names_list_extra_queues | join(',') %}
+
+{%- set port_names_list_inactive  = [] %}
+{%- for port in PORT_INACTIVE %}
+    {%- if port_names_list_inactive.append(port) %}{%- endif %}
+{%- endfor %}
+{%- set port_names_inactive  = port_names_list_inactive  | join(',') %}
 {
     "CABLE_LENGTH": {
         "AZURE": {
@@ -121,34 +156,82 @@ def
 
 {% if defs.generate_buffer_pool_and_profiles is defined %}
 {{ defs.generate_buffer_pool_and_profiles() }}
+{% elif defs.generate_buffer_pool_and_profiles_with_inactive_ports is defined %}
+{{ defs.generate_buffer_pool_and_profiles_with_inactive_ports(port_names_inactive) }}
 {% endif %}
 
+
+{%- if port_names_active|length > 0 or port_names_inactive|length > 0 -%}
 {%- if defs.generate_profile_lists is defined %}
 {{ defs.generate_profile_lists(port_names_active) }},
+{% elif defs.generate_profile_lists_with_inactive_ports is defined %}
+{{ defs.generate_profile_lists_with_inactive_ports(port_names_active, port_names_inactive) }},
 {% endif %}
 
-{%- if defs.generate_pg_profils is defined %}
+{% if (defs.generate_pg_profiles_with_extra_lossless_pgs_with_inactive_ports is defined) and (port_names_extra_queues != '') %}
+{{ defs.generate_pg_profiles_with_extra_lossless_pgs_with_inactive_ports(port_names_active, port_names_extra_queues, port_names_inactive) }},
+{% elif defs.generate_pg_profiles_with_inactive_ports is defined %}
+{{ defs.generate_pg_profiles_with_inactive_ports(port_names_active, port_names_inactive) }},
+{% elif defs.generate_pg_profils is defined %}
 {{ defs.generate_pg_profils(port_names_active) }}
 {% else %}
     "BUFFER_PG": {
-        "{{ port_names_active }}|0": {
-            "profile" : "[BUFFER_PROFILE|ingress_lossy_profile]"
-        }
+{% for port in PORT_ACTIVE %}
+{% if dynamic_mode is defined %}
+        "{{ port }}|3-4": {
+            "profile" : "NULL"
+        },
+{% endif %}
+        "{{ port }}|0": {
+            "profile" : "ingress_lossy_profile"
+        }{% if not loop.last %},{% endif %}
+
+{% endfor %}
     },
 {% endif %}
 
-{% if defs.generate_queue_buffers is defined %}
+{% if (defs.generate_queue_buffers_with_extra_lossless_queues_with_inactive_ports is defined) and (port_names_extra_queues != '') %}
+{{ defs.generate_queue_buffers_with_extra_lossless_queues_with_inactive_ports(port_names_active, port_names_extra_queues, port_names_inactive) }}
+{% elif (defs.generate_queue_buffers_with_extra_lossless_queues is defined) and (port_names_extra_queues != '') %}
+{{ defs.generate_queue_buffers_with_extra_lossless_queues(port_names_active, port_names_extra_queues) }}
+{% elif defs.generate_queue_buffers is defined %}
 {{ defs.generate_queue_buffers(port_names_active) }}
+{% elif defs.generate_queue_buffers_with_inactive_ports is defined %}
+{{ defs.generate_queue_buffers_with_inactive_ports(port_names_active, port_names_inactive) }}
 {% else %}
     "BUFFER_QUEUE": {
-        "{{ port_names_active }}|3-4": {
-            "profile" : "[BUFFER_PROFILE|egress_lossless_profile]"
+{% for port in PORT_ACTIVE %}
+        "{{ port }}|3-4": {
+            "profile" : "egress_lossless_profile"
         },
-        "{{ port_names_active }}|0-2": {
-            "profile" : "[BUFFER_PROFILE|egress_lossy_profile]"
+{% endfor %}
+{% for port in PORT_ACTIVE %}
+        "{{ port }}|0-2": {
+            "profile" : "egress_lossy_profile"
         },
-        "{{ port_names_active }}|5-6": {
-            "profile" : "[BUFFER_PROFILE|egress_lossy_profile]"
+{% endfor %}
+{% for port in PORT_ACTIVE %}
+        "{{ port }}|5-6": {
+            "profile" : "egress_lossy_profile"
+        }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    }
+{% endif %}
+{%- if dynamic_mode is defined -%}
+   ,
+{%- endif -%}
+{%- endif -%}
+{% if dynamic_mode is defined %}
+    "DEFAULT_LOSSLESS_BUFFER_PARAMETER": {
+        "AZURE": {
+            "default_dynamic_th": "0"
+        }
+    },
+    "LOSSLESS_TRAFFIC_PATTERN": {
+        "AZURE": {
+            "mtu": "1024",
+            "small_packet_percentage": "100"
         }
     }
 {% endif %}

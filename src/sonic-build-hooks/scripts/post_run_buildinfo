@@ -1,0 +1,16 @@
+#!/bin/bash
+
+. /usr/local/share/buildinfo/scripts/buildinfo_base.sh
+
+# Collect the version files
+collect_version_files $POST_VERSION_PATH
+
+[ -d $BUILD_VERSION_PATH ] && [ ! -z "$(ls -A $BUILD_VERSION_PATH)" ] && cp -rf $BUILD_VERSION_PATH/* $POST_VERSION_PATH
+rm -rf $BUILD_VERSION_PATH/*
+
+# Disable the build hooks
+symlink_build_hooks -d
+set_reproducible_mirrors -d
+
+# Remove the version deb preference
+rm -f $VERSION_DEB_PREFERENCE

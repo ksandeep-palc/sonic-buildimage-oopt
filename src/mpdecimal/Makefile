@@ -2,8 +2,8 @@
 SHELL = /bin/bash
 .SHELLFLAGS += -e
 
-MAIN_TARGET = libmpdec2_$(MPDECIMAL_VERSION_FULL)_amd64.deb
-DERIVED_TARGETS = libmpdec-dev_$(MPDECIMAL_VERSION_FULL)_amd64.deb
+MAIN_TARGET = libmpdec2_$(MPDECIMAL_VERSION_FULL)_$(CONFIGURED_ARCH).deb
+DERIVED_TARGETS = libmpdec-dev_$(MPDECIMAL_VERSION_FULL)_$(CONFIGURED_ARCH).deb
 
 $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
 	rm -rf mpdecimal-$(MPDECIMAL_VERSION)
@@ -14,7 +14,7 @@ $(addprefix $(DEST)/, $(MAIN_TARGET)): $(DEST)/% :
 
 	dpkg-source -x mpdecimal_$(MPDECIMAL_VERSION_FULL).dsc
 	pushd mpdecimal-$(MPDECIMAL_VERSION)
-	dpkg-buildpackage -us -uc -b -j$(SONIC_CONFIG_MAKE_JOBS)
+	dpkg-buildpackage -us -uc -b -j$(SONIC_CONFIG_MAKE_JOBS) --admindir $(SONIC_DPKG_ADMINDIR)
 	popd
 
 	mv $* $(DERIVED_TARGETS) $(DEST)/

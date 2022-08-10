@@ -40,8 +40,7 @@ fi
 }
 
 [ -r "$platform_conf" ] || {
-    echo "Error: Unable to read installer platform configuration file: $platform_conf"
-    exit 1
+    echo "Warning: Unable to read installer platform configuration file: $platform_conf"
 }
 
 [ $# -gt 0 ] || {
@@ -78,6 +77,12 @@ mkdir $tmp_installdir || clean_up 1
 
 cp -r $installer_dir/$arch/* $tmp_installdir || clean_up 1
 cp onie-image.conf $tmp_installdir
+cp onie-image-*.conf $tmp_installdir
+
+# Set sonic fips config for the installer script
+if [ "$ENABLE_FIPS" = "y" ]; then
+    EXTRA_CMDLINE_LINUX="$EXTRA_CMDLINE_LINUX sonic_fips=1"
+fi
 
 # Escape special chars in the user provide kernel cmdline string for use in
 # sed. Special chars are: \ / &
@@ -97,7 +102,9 @@ sed -i -e "s/%%DEMO_TYPE%%/$demo_type/g" \
 echo -n "."
 cp -r $* $tmp_installdir || clean_up 1
 echo -n "."
-cp $platform_conf $tmp_installdir || clean_up 1
+[ -r "$platform_conf" ] && {
+    cp $platform_conf $tmp_installdir || clean_up 1
+}
 echo "machine=$machine" > $tmp_installdir/machine.conf
 echo "platform=$platform" >> $tmp_installdir/machine.conf
 echo -n "."

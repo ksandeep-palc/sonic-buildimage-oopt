@@ -1,5 +1,10 @@
 #
-#  Copyright 2017 Broadcom
+#  Copyright 2007-2020 Broadcom Inc. All rights reserved.
+#  
+#  Permission is granted to use, copy, modify and/or distribute this
+#  software under either one of the licenses below.
+#  
+#  License Option 1: GPL
 #  
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License, version 2, as
@@ -12,6 +17,12 @@
 #  
 #  You should have received a copy of the GNU General Public License
 #  version 2 (GPLv2) along with this source code.
+#  
+#  
+#  License Option 2: Broadcom Open Network Switch APIs (OpenNSA) license
+#  
+#  This software is governed by the Broadcom Open Network Switch APIs license:
+#  https://www.broadcom.com/products/ethernet-connectivity/software/opennsa
 #
 # -*- Makefile -*-
 # $Id: Makefile,v 1.18 Broadcom SDK $
@@ -33,33 +44,11 @@ LIBS = $(LIBDIR)/libkern.a
 
 BDE = linux-kernel-bde.o
 
-ifdef ROBO_CHIPS
-CFLAGS += -I$(ET_ROBO) -I${SDK}/include/shared/et
-ET_ROBO = ${SDK}/systems/drv/et
-endif
-
 # need to add vpath sources
-VPATH = ../shared $(ET_ROBO)
+VPATH = ../shared
 
 # Add the srcs to be found by vpath
 LSRCS += mpool.c
-ifdef ROBO_CHIPS
-platformsplt = $(subst -, , ${platform})    # change hyphens to spaces
-platformbase = $(word 1,${platformsplt})
-
-ifeq ($(platformbase), keystone)
-    LSRCS += etc_robo_spi.c aiutils.c
-else
-    ifeq ($(platformbase), keystone_le)
-        LSRCS += etc_robo_spi.c aiutils.c
-    else
-        ifeq ($(platformbase), iproc)
-             LSRCS += robo_srab.c robo_spi.c aiutils.c
-        endif
-    endif
-endif # platformbase
-
-endif # ROBO_CHIPS
 
 # Add shared BDE sources
 VPATH += ../../shared
@@ -77,14 +66,16 @@ THIS_MOD_NAME := linux-kernel-bde
 MODULE = $(LIBDIR)/$(THIS_MOD_NAME).o
 KMODULE = $(LIBDIR)/$(THIS_MOD_NAME).ko
 
-build: kernel_libs $(MODULE) $(KMODULE)
+build: $(KMODULE)
 else
 MODULE = $(LIBDIR)/linux-kernel-bde.o
 
-build: kernel_libs $(MODULE)
+build: module
 endif
 
-$(MODULE): $(BLDDIR)/.tree kernel_libs $(BOBJS)
+module: $(MODULE)
+
+$(MODULE): $(BLDDIR)/.tree $(BOBJS) kernel_libs
 	mkdir -p $(@D)
 	$(LD) $(MODULE_LDFLAGS) -r -d $(BOBJS) $(LIBS) -o $@
 ifneq ($(kernel_version),2_4)
