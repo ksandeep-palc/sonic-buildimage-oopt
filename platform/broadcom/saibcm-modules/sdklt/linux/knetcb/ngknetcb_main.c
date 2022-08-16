@@ -386,6 +386,7 @@ ngknetcb_mmap(struct file *filp, struct vm_area_struct *vma)
     return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 static struct file_operations ngknetcb_fops = {
     .owner = THIS_MODULE,
     .open = ngknetcb_open,
@@ -397,7 +398,7 @@ static struct file_operations ngknetcb_fops = {
     .compat_ioctl = ngknetcb_ioctl,
     .mmap = ngknetcb_mmap,
 };
-
+#else
 static struct proc_ops ngknetcb_proc_ops = {
     .proc_open = ngknetcb_open,
     .proc_read = seq_read,
@@ -408,6 +409,7 @@ static struct proc_ops ngknetcb_proc_ops = {
     .proc_compat_ioctl = ngknetcb_ioctl,
     .proc_mmap = ngknetcb_mmap,
 };
+#endif
 
 static int __init
 ngknetcb_init_module(void)
@@ -422,7 +424,11 @@ ngknetcb_init_module(void)
         return rv;
     }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+    PROC_CREATE(entry, NGKNETCB_MODULE_NAME, 0666, NULL, &ngknetcb_fops);
+#else
     PROC_CREATE(entry, NGKNETCB_MODULE_NAME, 0666, NULL, &ngknetcb_proc_ops);
+#endif
     if (entry == NULL) {
         printk(KERN_ERR "%s: proc_mkdir failed\n",
                 NGKNETCB_MODULE_NAME);
